@@ -1,108 +1,118 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
+import streamlit as st
 from pathlib import Path
 
-st.set_page_config(page_title="Student Performance Analysis", layout="wide")
+st.set_page_config(
+    page_title="Student Performance Analysis",
+    page_icon="🎓",
+    layout="wide"
+)
 
 st.title("🎓 Student Performance Analysis System")
-st.write("Analyze student marks, attendance, grades, and overall performance.")
+st.write("Analyze student results and search for individual student details.")
 
+# Load the Excel dataset from the project folder
 file_path = Path(__file__).parent / "student data.xlsx"
 
 try:
     df = pd.read_excel(file_path)
 
-    required_columns = [
-        "name", "s1", "s2", "s3", "s4", "s5", "s6", "attendence"
-    ]
+    subject_cols = ["s1", "s2", "s3", "s4", "s5", "s6"]
+    attendance_col = "attendence"
 
-    if not all(col in df.columns for col in required_columns):
-        st.error("The Excel file is missing one or more required columns.")
+    required_cols = ["name"] + subject_cols + [attendance_col]
+
+    if not all(col in df.columns for col in required_cols):
+        st.error("The Excel file is missing required columns.")
         st.stop()
 
-    pass_mark = st.number_input(
-        "Minimum marks required in each subject",
-        min_value=0, max_value=100, value=35
+    # Display the original dataset
+    st.subheader("Student Dataset")
+    st.dataframe(df, use_container_width=True)
+
+    # User inputs
+    st.subheader("Analysis Settings")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        pass_mark = st.number_input(
+            "Pass marks required in each subject",
+            min_value=0,
+            max_value=100,
+            value=35,
+            step=1
+        )
+
+    with col2:
+        min_attendance = st.number_input(
+            "Minimum attendance percentage",
+            min_value=0.0,
+            max_value=100.0,
+            value=75.0,
+            step=1.0
+        )
+
+    # Apply the original analysis logic
+    is_pass = (
+        (df[subject_cols] >= pass_mark).all(axis=1)
+        & (df[attendance_col] >= min_attendance)
     )
 
-    min_attendance = st.number_input(
-        "Minimum attendance percentage",
-        min_value=0.0, max_value=100.0, value=75.0
+    df["Result"] = np.where(is_pass, "pass", "fail")
+    df["Average"] = df[subject_cols].mean(axis=1).round(2)
+
+    df["Description"] = df.apply(
+        lambda row: (
+            f"{row['name']} obtained an average score of "
+            f"{row['Average']}% across {len(subject_cols)} subjects "
+            f"with an attendance of {row[attendance_col]}%. "
+            f"The student has {row['Result']} the requirements."
+        ),
+        axis=1
     )
 
-    if st.button("Analyze Student Performance"):
-        subject_cols = ["s1", "s2", "s3", "s4", "s5", "s6"]
+    # Display complete results
+    st.subheader("Student Performance Results")
+    st.dataframe(df, use_container_width=True)
 
-        df["Average Marks"] = df[subject_cols].mean(axis=1)
+    # Search for a student
+    st.subheader("🔍 Search for a Student")
 
-        is_pass = (
-            (df[subject_cols] >= pass_mark).all(axis=1)
-            & (df["attendence"] >= min_attendance)
-        )
+    student_name = st.text_input(
+        "Enter the student's name"
+    ).strip().lower()
 
-        df["Result"] = np.where(is_pass, "pass", "fail")
+    if student_name:
+        matched = df[
+            df["name"].astype(str).str.strip().str.lower()
+            == student_name
+        ]
 
-        df["Grade"] = np.select(
-            [
-                df["Average Marks"] >= 90,
-                df["Average Marks"] >= 80,
-                df["Average Marks"] >= 70,
-                df["Average Marks"] >= 60
-            ],
-            ["A", "B", "C", "D"],
-            default="E"
-        )
+        if not matched.empty:
+            for _, student in matched.iterrows():
+                st.subheader(f"Student: {student['name']}")
 
-        df.loc[~is_pass, "Grade"] = "fail"
+                details = matched.drop(columns=["Description"])
+                st.dataframe(details, use_container_width=True)
 
-        st.subheader("Analysis Results")
-        st.dataframe(df, use_container_width=True)
+                st.markdown("**Performance Description**")
+                st.info(student["Description"])
+        else:
+            st.warning("No student found with that name.")
 
-        top_idx = df["Average Marks"].idxmax()
-        top_student = df.loc[top_idx]
+    # Download analyzed results
+    csv_data = df.to_csv(index=False).encode("utf-8")
 
-        st.subheader("🏆 Top Performing Student")
-        st.success(
-            f"{top_student['name']} — "
-            f"Average: {top_student['Average Marks']:.2f}%"
-        )
-
-        st.subheader("Student Performance Descriptions")
-
-        for _, row in df.iterrows():
-            failed = [
-                sub.upper()
-                for sub in subject_cols
-                if row[sub] < pass_mark
-            ]
-
-            low_attendance = row["attendence"] < min_attendance
-
-            if row["Result"] == "pass":
-                description = (
-                    f"{row['name']} passed with an average of "
-                    f"{row['Average Marks']:.2f}% and grade "
-                    f"{row['Grade']}. Attendance: {row['attendence']}%."
-                )
-            else:
-                reasons = []
-                if failed:
-                    reasons.append("failed subjects: " + ", ".join(failed))
-                if low_attendance:
-                    reasons.append(
-                        f"attendance shortage ({row['attendence']}%)"
-                    )
-
-                description = (
-                    f"{row['name']} failed due to "
-                    f"{' and '.join(reasons)}. "
-                    f"Average: {row['Average Marks']:.2f}%."
-                )
-
-            st.write("- " + description)
+    st.download_button(
+        label="Download Student Results (CSV)",
+        data=csv_data,
+        file_name="student_performance_results.csv",
+        mime="text/csv"
+    )
 
 except FileNotFoundError:
-    st.error("Dataset not found. Ensure student data.xlsx is in the project folder.")
+    st.error("Dataset not found. Keep 'student data.xlsx' in the project folder.")
 except Exception as e:
-    st.error(f"Unable to analyze the dataset: {e}")
+    st.error(f"An error occurred while processing the dataset: {e}")
