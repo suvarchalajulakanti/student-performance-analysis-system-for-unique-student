@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 df = pd.read_excel("/content/student data.xlsx")  # upload your file
-print(df.to_string(index=False))
+#print(df.to_string(index=False))
 pass_mark = int(input("enter the pass marks for each subject: "))
 min_attendence = float(input("enter the minimum attendence percent: "))
 is_pass = (
